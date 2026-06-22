@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   LayoutDashboard, Users, MessageSquare, Heart, BookOpen,
   FileText, Shield, Bell, Monitor, ClipboardList, Settings,
@@ -261,6 +261,42 @@ const CHART_COLORS = {
   rose:   "#F43F5E",
 };
 
+// Utility helpers
+function downloadCSV(filename: string, rows: Array<Array<string | number | boolean>>) {
+  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = rows.map(r => r.map(esc).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function generateId(prefix = "id") {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+}
+
+function setNested(obj: any, path: string, value: any) {
+  const parts = path.split('.');
+  const out = { ...obj };
+  let cur: any = out;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    cur[p] = { ...(cur[p] ?? {}) };
+    cur = cur[p];
+  }
+  cur[parts[parts.length - 1]] = value;
+  return out;
+}
+
+function getNested(obj: any, path: string) {
+  return path.split('.').reduce((acc, p) => (acc ? acc[p] : undefined), obj);
+}
+
 // Background gradient mesh
 const PageBg = () => (
   <div className="fixed inset-0 -z-10 overflow-hidden" aria-hidden>
@@ -350,14 +386,19 @@ function StatusPulse({ status }: { status: string }) {
 
 // Stat card — API field name passed as `field` prop for developer reference
 function StatCard({
-  label, field, value, sub, trend, trendUp, icon: Icon, accent = false, gradient,
+  label, field, value, sub, trend, trendUp, icon: Icon, accent = false, gradient, onClick,
 }: {
   label: string; field: keyof DashboardStats; value: string | number; sub?: string;
   trend?: string; trendUp?: boolean; icon: React.ElementType;
-  accent?: boolean; gradient?: string;
+  accent?: boolean; gradient?: string; onClick?: () => void;
 }) {
   return (
-    <div className={`${glassCard} p-5 relative overflow-hidden group`}
+    <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { onClick(); } } : undefined}
+      onClick={onClick}
+      className={`${glassCard} p-5 relative overflow-hidden group ${onClick ? "cursor-pointer" : ""}`}
       title={`API field: ${field}`}>
       {/* Gradient glow */}
       {gradient && (
@@ -732,9 +773,12 @@ function Sidebar({ active, setActive, collapsed, setCollapsed }: {
 // TOP NAVIGATION BAR
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => void }) {
+function TopNav({ section, onLogout, onNavigate, onSearch }: { section: SectionId; onLogout: () => void; onNavigate?: (s: SectionId, opts?: { tab?: "api"|"email"|"otp"|"security" }) => void; onSearch?: (section: SectionId, query: string) => void }) {
   const [notifOpen,  setNotifOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const profileBtnRef = useRef<HTMLButtonElement | null>(null);
+  const profilePanelRef = useRef<HTMLDivElement | null>(null);
   const label = NAV_ITEMS.find(n => n.id === section)?.label ?? "Dashboard";
   const endpoint = NAV_ITEMS.find(n => n.id === section)?.endpoint;
 
@@ -744,6 +788,29 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
     { msg: "New user registration milestone: 124,847 users",      time: "1h ago",  color: "text-emerald-400" },
     { msg: "Scheduled maintenance window in 2 days",              time: "3h ago",  color: "text-blue-400"    },
   ];
+
+  useEffect(() => {
+    function handleDocClick(e: MouseEvent) {
+      const t = e.target as Node;
+      if (profileOpen) {
+        if (profilePanelRef.current && profileBtnRef.current && !profilePanelRef.current.contains(t) && !profileBtnRef.current.contains(t)) {
+          setProfileOpen(false);
+        }
+      }
+    }
+    document.addEventListener("mousedown", handleDocClick);
+    return () => document.removeEventListener("mousedown", handleDocClick);
+  }, [profileOpen]);
+
+  const handleSearchKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      onSearch?.(section, query);
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      (e.target as HTMLInputElement).focus();
+      e.preventDefault();
+    }
+  }, [onSearch, section, query]);
 
   return (
     <header className="h-14 flex items-center px-5 gap-4 flex-shrink-0 border-b border-white/[0.06]"
@@ -765,7 +832,8 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
       {/* Search */}
       <div className="relative hidden md:block">
         <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
-        <input placeholder="Search users, reports, logs…"
+        <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={handleSearchKey}
+          placeholder="Search users, reports, logs…"
           className="pl-8 pr-12 py-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] text-sm text-slate-300 placeholder:text-slate-600 w-60 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/30 transition" />
         <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-600 bg-white/[0.06] px-1.5 py-0.5 rounded font-mono hidden xl:block">⌘K</kbd>
       </div>
@@ -790,7 +858,7 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
               </div>
             ))}
             <div className="px-4 py-2.5 text-center border-t border-white/[0.06]">
-              <button className="text-xs text-blue-400 hover:text-blue-300 transition">View all notifications</button>
+              <button onClick={() => { onNavigate?.('notifications'); setNotifOpen(false); }} className="text-xs text-blue-400 hover:text-blue-300 transition">View all notifications</button>
             </div>
           </div>
         )}
@@ -798,7 +866,7 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
 
       {/* Profile */}
       <div className="relative">
-        <button onClick={() => { setProfileOpen(v => !v); setNotifOpen(false); }}
+        <button ref={profileBtnRef} onClick={() => { setProfileOpen(v => !v); setNotifOpen(false); }}
           className="flex items-center gap-2 rounded-xl hover:bg-white/[0.06] px-2 py-1.5 transition">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold"
             style={{ background: "linear-gradient(135deg, #3B82F6, #8B5CF6)" }}>SA</div>
@@ -809,24 +877,39 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
           <ChevronDown size={13} className="text-slate-500" />
         </button>
         {profileOpen && (
-          <div className={`absolute right-0 top-12 w-52 ${glass} bg-[#0A0F1E]/95 shadow-2xl z-50 overflow-hidden`}>
-            <div className="px-4 py-3 border-b border-white/[0.06]">
+          <div ref={profilePanelRef}
+            className={`${glass} bg-[#0A0F1E]/95 shadow-2xl`} 
+            style={{ position: 'absolute', right: 0, top: 48, minWidth: 208, zIndex: 9999 }}>
+            <div className="px-3 py-2 border-b border-white/[0.06]">
               <p className="text-sm font-semibold text-white">Super Admin</p>
               <p className="text-xs text-slate-500">RBAC: SUPER_ADMIN</p>
             </div>
+            <div className="max-h-72 overflow-auto">
             {[
               { label: "My Profile",  icon: User },
               { label: "Security",    icon: Shield },
               { label: "API Tokens",  icon: Key },
             ].map(item => (
-              <button key={item.label} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.04] transition">
-                <item.icon size={13} />
+              <button key={item.label}
+                onClick={() => {
+                  if (item.label === 'My Profile') {
+                    onNavigate?.('users');
+                  } else if (item.label === 'Security') {
+                    onNavigate?.('settings', { tab: 'security' });
+                  } else if (item.label === 'API Tokens') {
+                    onNavigate?.('settings', { tab: 'api' });
+                  }
+                  setProfileOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/[0.04] transition">
+                <item.icon size={14} />
                 {item.label}
               </button>
             ))}
+            </div>
             <div className="border-t border-white/[0.06]">
-              <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-400 hover:bg-red-500/10 transition">
-                <LogOut size={13} />
+              <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition">
+                <LogOut size={14} />
                 Sign out
               </button>
             </div>
@@ -841,26 +924,41 @@ function TopNav({ section, onLogout }: { section: SectionId; onLogout: () => voi
 // PAGE: DASHBOARD OVERVIEW — GET /api/dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DashboardOverview() {
-  const stats = MOCK_DASHBOARD_STATS; // Replace: const stats = await axios.get<DashboardStats>('/api/dashboard')
+function DashboardOverview({ onNavigate }: { onNavigate?: (s: SectionId, opts?: { tab?: "api"|"email"|"otp"|"security" }) => void }) {
+  const [stats, setStats] = useState(MOCK_DASHBOARD_STATS);
+
+  const refresh = () => setStats(s => ({
+    ...s,
+    totalUsers: Math.max(0, s.totalUsers + Math.floor(Math.random() * 100 - 50)),
+    activeUsers: Math.max(0, s.activeUsers + Math.floor(Math.random() * 20 - 10)),
+    totalJournalEntries: Math.max(0, s.totalJournalEntries + Math.floor(Math.random() * 200 - 100)),
+    totalMoodLogs: Math.max(0, s.totalMoodLogs + Math.floor(Math.random() * 200 - 100)),
+    totalAiChats: Math.max(0, s.totalAiChats + Math.floor(Math.random() * 1000 - 500)),
+    totalReports: Math.max(0, s.totalReports + Math.floor(Math.random() * 5 - 2)),
+  }));
+
+  const exportReport = () => {
+    const rows: Array<Array<string>> = [["metric", "value"], ...Object.entries(stats).map(([k, v]) => [k, String(v)])];
+    downloadCSV('dashboard-report.csv', rows as any);
+  };
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Dashboard Overview"
         sub="Real-time platform metrics · Endpoint: GET /api/dashboard · Updated Jun 18, 2025 09:41 EST">
-        <Btn variant="outline"><RefreshCw size={12} />Refresh</Btn>
-        <Btn><Download size={12} />Export Report</Btn>
+        <Btn variant="outline" onClick={refresh}><RefreshCw size={12} />Refresh</Btn>
+        <Btn onClick={exportReport}><Download size={12} />Export Report</Btn>
       </SectionHeader>
 
       {/* KPI Grid — each card maps to a DashboardStats field */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard field="totalUsers"          label="Total Users"         value={stats.totalUsers}          trend="+12.3%" trendUp icon={Users}        accent gradient={CHART_COLORS.blue} />
-        <StatCard field="activeUsers"         label="Active Users"        value={stats.activeUsers}         trend="+5.1%"  trendUp icon={Activity}           gradient={CHART_COLORS.cyan} />
-        <StatCard field="totalJournalEntries" label="Journal Entries"     value={stats.totalJournalEntries} trend="+6.1%"  trendUp icon={BookOpen}           gradient={CHART_COLORS.violet} />
-        <StatCard field="totalMoodLogs"       label="Mood Logs"           value={stats.totalMoodLogs}       trend="+3.2%"  trendUp icon={Heart}              gradient={CHART_COLORS.green} />
-        <StatCard field="totalAiChats"        label="AI Chats"            value={stats.totalAiChats}        trend="+8.7%"  trendUp icon={Sparkles}           gradient={CHART_COLORS.amber} />
-        <StatCard field="totalReports"        label="Open Reports"        value={stats.totalReports}        trend="+4"     trendUp={false} icon={Shield}     gradient={CHART_COLORS.rose} />
+        <StatCard field="totalUsers"          label="Total Users"         value={stats.totalUsers}          trend="+12.3%" trendUp icon={Users}        accent gradient={CHART_COLORS.blue} onClick={() => onNavigate?.('users')} />
+        <StatCard field="activeUsers"         label="Active Users"        value={stats.activeUsers}         trend="+5.1%"  trendUp icon={Activity}           gradient={CHART_COLORS.cyan} onClick={() => onNavigate?.('users')} />
+        <StatCard field="totalJournalEntries" label="Journal Entries"     value={stats.totalJournalEntries} trend="+6.1%"  trendUp icon={BookOpen}           gradient={CHART_COLORS.violet} onClick={() => onNavigate?.('analytics')} />
+        <StatCard field="totalMoodLogs"       label="Mood Logs"           value={stats.totalMoodLogs}       trend="+3.2%"  trendUp icon={Heart}              gradient={CHART_COLORS.green} onClick={() => onNavigate?.('analytics')} />
+        <StatCard field="totalAiChats"        label="AI Chats"            value={stats.totalAiChats}        trend="+8.7%"  trendUp icon={Sparkles}           gradient={CHART_COLORS.amber} onClick={() => onNavigate?.('ai-monitoring')} />
+        <StatCard field="totalReports"        label="Open Reports"        value={stats.totalReports}        trend="+4"     trendUp={false} icon={Shield}     gradient={CHART_COLORS.rose} onClick={() => onNavigate?.('reports')} />
       </div>
 
       {/* Charts row */}
@@ -960,13 +1058,26 @@ function UserManagement() {
   const [filterStatus, setFilterStatus] = useState<"ALL" | UserStatus>("ALL");
   const [filterRole,   setFilterRole]   = useState<"ALL" | UserRole>("ALL");
   const [selected,     setSelected]     = useState<string[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>("USER");
   const [page, setPage] = useState(1);
   const PER_PAGE = 8;
 
   // Replace: const users = await axios.get<UserRecord[]>('/api/users')
-  const users = MOCK_USERS;
+  const [users, setUsers] = useState<UserRecord[]>(() => {
+    try {
+      const local = localStorage.getItem('local_users');
+      const parsed = local ? JSON.parse(local) as UserRecord[] : [];
+      return [...parsed, ...MOCK_USERS];
+    } catch (e) { return MOCK_USERS; }
+  });
 
-  const filtered = users.filter(u => {
+  // Do not show users with BANNED status in the User Management UI
+  const visibleUsers = users.filter(u => u.status !== 'BANNED');
+
+  const filtered = visibleUsers.filter(u => {
     const q = search.toLowerCase();
     const matchSearch = u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.id.toLowerCase().includes(q);
     const matchStatus = filterStatus === "ALL" || u.status === filterStatus;
@@ -981,20 +1092,91 @@ function UserManagement() {
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const allSelected = paged.length > 0 && paged.every(u => selected.includes(u.id));
 
+  const exportCSV = () => {
+    const rows: Array<Array<string | number>> = [
+      ["id", "fullName", "email", "role", "status", "createdAt", "lastLogin"],
+      ...visibleUsers.map(u => [u.id, u.fullName, u.email, u.role, u.status, u.createdAt, u.lastLogin])
+    ];
+    downloadCSV('users.csv', rows as any);
+  };
+
+  const inviteUser = (payload: { fullName: string; email: string; role: UserRole }) => {
+    const newUser: UserRecord = {
+      id: generateId('usr'),
+      fullName: payload.fullName,
+      email: payload.email,
+      role: payload.role,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString(),
+    };
+    setUsers(u => [newUser, ...u]);
+    try {
+      const local = JSON.parse(localStorage.getItem('local_users') || '[]');
+      local.unshift(newUser);
+      localStorage.setItem('local_users', JSON.stringify(local));
+    } catch (e) { /* ignore */ }
+  };
+
   return (
     <div className="space-y-6">
-      <SectionHeader title="User Management" sub={`${users.length} total users · Endpoint: GET /api/users`}>
-        <Btn variant="outline"><Download size={12} />Export CSV</Btn>
-        <Btn><Plus size={12} />Invite User</Btn>
+      <SectionHeader title="User Management" sub={`${visibleUsers.length} total users · Endpoint: GET /api/users`}>
+        <Btn variant="outline" onClick={exportCSV}><Download size={12} />Export CSV</Btn>
+        <Btn onClick={() => setInviteOpen(true)}><Plus size={12} />Invite User</Btn>
       </SectionHeader>
 
+      {inviteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className={`${glassCard} w-full max-w-md p-6 relative`}>
+            <button onClick={() => setInviteOpen(false)} className="absolute right-4 top-4 text-slate-500 hover:text-slate-300 transition">
+              <X size={16} />
+            </button>
+            <h3 className="font-bold text-white mb-1">Invite User</h3>
+            <p className="text-xs text-slate-500 mb-4">Create a new user account (mock invite for local testing).</p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Full name</label>
+                <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="e.g. Priya Nair" className={glassInput} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Email address</label>
+                <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="e.g. priya.nair@gmail.com" className={glassInput} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Role</label>
+                <select value={inviteRole} onChange={e => setInviteRole(e.target.value as UserRole)} className={`${glassInput} appearance-none`}>
+                  <option value="USER">USER</option>
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="MODERATOR">MODERATOR</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <Btn variant="outline" className="flex-1 justify-center" onClick={() => setInviteOpen(false)}>Cancel</Btn>
+              <Btn className="flex-1 justify-center" onClick={() => {
+                const name = inviteName.trim();
+                const email = inviteEmail.trim();
+                if (!name || !email) { alert('Name and email are required'); return; }
+                const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRe.test(email)) { alert('Please enter a valid email address'); return; }
+                inviteUser({ fullName: name, email, role: inviteRole });
+                setInviteOpen(false);
+                setInviteName(''); setInviteEmail(''); setInviteRole('USER');
+                alert('Invitation created (mock)');
+              }}>Invite</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Aggregate stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
-          { label: "Total Users",  value: users.length,                                          icon: Users,       gradient: CHART_COLORS.blue },
-          { label: "Active",       value: users.filter(u => u.status === "ACTIVE").length,       icon: CheckCircle, gradient: CHART_COLORS.green },
-          { label: "Suspended",    value: users.filter(u => u.status === "SUSPENDED").length,    icon: AlertTriangle,gradient: CHART_COLORS.amber },
-          { label: "Banned",       value: users.filter(u => u.status === "BANNED").length,       icon: XCircle,     gradient: CHART_COLORS.rose },
+          { label: "Total Users",  value: visibleUsers.length,                                          icon: Users,       gradient: CHART_COLORS.blue },
+          { label: "Active",       value: visibleUsers.filter(u => u.status === "ACTIVE").length,       icon: CheckCircle, gradient: CHART_COLORS.green },
+          { label: "Suspended",    value: visibleUsers.filter(u => u.status === "SUSPENDED").length,    icon: AlertTriangle,gradient: CHART_COLORS.amber },
         ].map(s => (
           <div key={s.label} className={`${glassCard} p-4 relative overflow-hidden`}>
             <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full opacity-20"
@@ -1021,7 +1203,7 @@ function UserManagement() {
 
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-slate-600 mr-1">Status:</span>
-          {(["ALL", "ACTIVE", "INACTIVE", "SUSPENDED", "BANNED"] as const).map(s => (
+          {( ["ALL", "ACTIVE", "INACTIVE", "SUSPENDED"] as const ).map(s => (
             <button key={s} onClick={() => { setFilterStatus(s); setPage(1); }}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${filterStatus === s ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"}`}>
               {s}
@@ -1042,7 +1224,7 @@ function UserManagement() {
         {selected.length > 0 && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-slate-400">{selected.length} selected</span>
-            <Btn variant="danger" size="xs"><Ban size={11} />Suspend</Btn>
+            <Btn variant="danger" size="xs"><Lock size={11} />Suspend</Btn>
             <Btn variant="danger" size="xs"><Trash2 size={11} />Delete</Btn>
           </div>
         )}
@@ -1095,7 +1277,7 @@ function UserManagement() {
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                     <Btn variant="ghost" size="xs"><Eye size={11} /></Btn>
                     <Btn variant="ghost" size="xs"><Edit size={11} /></Btn>
-                    <Btn variant="danger" size="xs"><Ban size={11} /></Btn>
+                    <Btn variant="danger" size="xs"><Lock size={11} /></Btn>
                   </div>
                 </Td>
               </tr>
@@ -1129,13 +1311,21 @@ function UserManagement() {
 
 function AnalyticsPage() {
   // Replace: const analytics = await axios.get<AnalyticsPayload>('/api/analytics')
-  const analytics = MOCK_ANALYTICS;
+  const [analytics, setAnalytics] = useState(MOCK_ANALYTICS);
+
+  const exportAnalytics = (from?: string, to?: string) => {
+    // simple CSV export of combined analytics arrays
+    const rows: Array<Array<string>> = [["type","date","value"]];
+    analytics.userGrowth.forEach(r => rows.push(["userGrowth", r.date, String(r.count)]));
+    analytics.dailyActiveUsers.forEach(r => rows.push(["dailyActiveUsers", r.date, String(r.count)]));
+    downloadCSV('analytics.csv', rows as any);
+  };
 
   return (
     <div className="space-y-6">
       <SectionHeader title="Analytics" sub="Platform trends · Endpoint: GET /api/analytics">
         <Btn variant="outline"><Filter size={12} />Date Range</Btn>
-        <Btn><Download size={12} />Export</Btn>
+        <Btn onClick={() => exportAnalytics()}><Download size={12} />Export</Btn>
       </SectionHeader>
 
       {/* userGrowth + dailyActiveUsers */}
@@ -1468,7 +1658,7 @@ function NotificationsPage() {
   const [audience,   setAudience]     = useState<NotifAudience>("ALL");
 
   // Replace: const notifs = await axios.get<NotificationRecord[]>('/api/notifications')
-  const notifs = MOCK_NOTIFICATIONS;
+  const [notifs, setNotifs] = useState<NotificationRecord[]>(MOCK_NOTIFICATIONS);
 
   return (
     <div className="space-y-6">
@@ -1516,7 +1706,13 @@ function NotificationsPage() {
             </div>
             <div className="flex gap-2 mt-6">
               <Btn variant="outline" onClick={() => setComposeOpen(false)} className="flex-1 justify-center">Cancel</Btn>
-              <Btn className="flex-1 justify-center"><Send size={12} />Send Notification</Btn>
+              <Btn className="flex-1 justify-center" onClick={() => {
+                if (!notifTitle || !notifMsg) { alert('Title and message required'); return; }
+                const newNotif: NotificationRecord = { id: generateId('notif'), notificationTitle: notifTitle, notificationMessage: notifMsg, targetAudience: audience, sentAt: new Date().toISOString() };
+                setNotifs(n => [newNotif, ...n]);
+                setComposeOpen(false);
+                setNotifTitle(''); setNotifMsg(''); setAudience('ALL');
+              }}><Send size={12} />Send Notification</Btn>
             </div>
           </div>
         </div>
@@ -1574,25 +1770,50 @@ function NotificationsPage() {
 // PAGE: SETTINGS — GET /api/settings / PATCH /api/settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SettingsPage() {
+function SettingsPage({ initialTab, onTabConsumed }: { initialTab?: "api"|"email"|"otp"|"security"; onTabConsumed?: () => void }) {
   const [tab, setTab] = useState<"api"|"email"|"otp"|"security">("api");
-  // Replace: const settings = await axios.get<SettingsPayload>('/api/settings')
-  const settings = MOCK_SETTINGS;
+  const [settingsState, setSettingsState] = useState<SettingsPayload>(() => {
+    try {
+      const s = localStorage.getItem('local_settings');
+      return s ? JSON.parse(s) : MOCK_SETTINGS;
+    } catch (e) { return MOCK_SETTINGS; }
+  });
+  const [settingsSearch, setSettingsSearch] = useState("");
 
-  const FieldRow = ({ field, value, type = "text", mono = false }: {
-    field: string; value: string | number | boolean; type?: string; mono?: boolean;
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+      onTabConsumed?.();
+    }
+  }, [initialTab, onTabConsumed]);
+
+  const saveSettings = () => {
+    try {
+      localStorage.setItem('local_settings', JSON.stringify(settingsState));
+      alert('Settings saved (in-memory)');
+    } catch (e) { alert('Failed to save settings'); }
+  };
+
+  const resetSettings = () => {
+    setSettingsState(MOCK_SETTINGS);
+    localStorage.removeItem('local_settings');
+    alert('Settings reset to defaults');
+  };
+
+  const FieldRow = ({ field, value, onChange, type = "text", mono = false }: {
+    field: string; value: string | number | boolean; onChange?: (v: any) => void; type?: string; mono?: boolean;
   }) => (
     <div>
       <label className="text-[10px] font-mono text-slate-600 uppercase tracking-widest block mb-1.5">{field}</label>
       {typeof value === "boolean" ? (
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-5 rounded-full relative cursor-pointer transition ${value ? "bg-blue-500/40" : "bg-white/10"} border ${value ? "border-blue-500/40" : "border-white/10"}`}>
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full shadow transition-transform ${value ? "translate-x-5 bg-blue-400" : "translate-x-0.5 bg-slate-500"}`} />
-          </div>
+          <button onClick={() => onChange?.(!value)} type="button" className={`w-10 h-5 rounded-full relative inline-flex items-center transition ${value ? "bg-blue-500/40" : "bg-white/10"} border ${value ? "border-blue-500/40" : "border-white/10"}`}>
+            <span className={`absolute left-0.5 w-4 h-4 rounded-full shadow transition-transform ${value ? "translate-x-5 bg-blue-400" : "translate-x-0.5 bg-slate-500"}`} />
+          </button>
           <span className="text-xs text-slate-400">{value ? "Enabled" : "Disabled"}</span>
         </div>
       ) : (
-        <input type={type} defaultValue={String(value)}
+        <input type={type} value={String(value)} onChange={e => onChange?.(type === 'number' ? Number(e.target.value) : e.target.value)}
           className={`${glassInput} ${mono ? "font-mono text-xs" : ""}`} />
       )}
     </div>
@@ -1608,9 +1829,14 @@ function SettingsPage() {
   return (
     <div className="space-y-6">
       <SectionHeader title="Settings" sub="Platform configuration · Endpoint: GET /api/settings · PATCH /api/settings">
-        <Btn variant="outline"><RefreshCw size={12} />Reset</Btn>
-        <Btn><CheckCircle size={12} />Save All</Btn>
+        <Btn variant="outline" onClick={resetSettings}><RefreshCw size={12} />Reset</Btn>
+        <Btn onClick={saveSettings}><CheckCircle size={12} />Save All</Btn>
       </SectionHeader>
+
+      <div className="mb-4">
+        <input placeholder="Search settings…" value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)}
+          className="w-full max-w-sm rounded-xl px-4 py-2.5 bg-white/[0.04] border border-white/[0.06] text-sm text-slate-300" />
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1.5 border-b border-white/[0.06] pb-0">
@@ -1627,10 +1853,13 @@ function SettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className={`${glassCard} p-6 space-y-4`}>
             <p className="text-xs font-mono text-blue-500/60 border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 rounded-lg">GET /api/settings → apiConfiguration</p>
-            <FieldRow field="baseUrl"            value={settings.apiConfiguration.baseUrl}            mono />
-            <FieldRow field="apiVersion"         value={settings.apiConfiguration.apiVersion}         mono />
-            <FieldRow field="rateLimitPerMinute" value={settings.apiConfiguration.rateLimitPerMinute} type="number" />
-            <FieldRow field="timeoutMs"          value={settings.apiConfiguration.timeoutMs}          type="number" />
+            {['baseUrl','apiVersion','rateLimitPerMinute','timeoutMs'].map(f => {
+              if (settingsSearch && !f.toLowerCase().includes(settingsSearch.toLowerCase())) return null;
+              if (f === 'baseUrl') return <FieldRow key={f} field={f} value={settingsState.apiConfiguration.baseUrl} onChange={v => setSettingsState(s => setNested(s, 'apiConfiguration.baseUrl', v))} mono />;
+              if (f === 'apiVersion') return <FieldRow key={f} field={f} value={settingsState.apiConfiguration.apiVersion} onChange={v => setSettingsState(s => setNested(s, 'apiConfiguration.apiVersion', v))} mono />;
+              if (f === 'rateLimitPerMinute') return <FieldRow key={f} field={f} value={settingsState.apiConfiguration.rateLimitPerMinute} onChange={v => setSettingsState(s => setNested(s, 'apiConfiguration.rateLimitPerMinute', v))} type="number" />;
+              return <FieldRow key={f} field={f} value={settingsState.apiConfiguration.timeoutMs} onChange={v => setSettingsState(s => setNested(s, 'apiConfiguration.timeoutMs', v))} type="number" />;
+            })}
             <Btn size="md" className="mt-2"><CheckCircle size={13} />Update API Config</Btn>
           </div>
           <div className={`${glassCard} p-6`}>
@@ -1657,11 +1886,14 @@ function SettingsPage() {
       {tab === "email" && (
         <div className={`${glassCard} p-6 space-y-4 max-w-xl`}>
           <p className="text-xs font-mono text-blue-500/60 border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 rounded-lg">GET /api/settings → emailConfiguration</p>
-          <FieldRow field="smtpHost"     value={settings.emailConfiguration.smtpHost}     mono />
-          <FieldRow field="smtpPort"     value={settings.emailConfiguration.smtpPort}     type="number" />
-          <FieldRow field="senderEmail"  value={settings.emailConfiguration.senderEmail}  mono />
-          <FieldRow field="senderName"   value={settings.emailConfiguration.senderName} />
-          <FieldRow field="tlsEnabled"   value={settings.emailConfiguration.tlsEnabled} />
+          {['smtpHost','smtpPort','senderEmail','senderName','tlsEnabled'].map(f => {
+            if (settingsSearch && !f.toLowerCase().includes(settingsSearch.toLowerCase())) return null;
+            if (f === 'smtpHost') return <FieldRow key={f} field={f} value={settingsState.emailConfiguration.smtpHost} onChange={v => setSettingsState(s => setNested(s, 'emailConfiguration.smtpHost', v))} mono />;
+            if (f === 'smtpPort') return <FieldRow key={f} field={f} value={settingsState.emailConfiguration.smtpPort} onChange={v => setSettingsState(s => setNested(s, 'emailConfiguration.smtpPort', v))} type="number" />;
+            if (f === 'senderEmail') return <FieldRow key={f} field={f} value={settingsState.emailConfiguration.senderEmail} onChange={v => setSettingsState(s => setNested(s, 'emailConfiguration.senderEmail', v))} mono />;
+            if (f === 'senderName') return <FieldRow key={f} field={f} value={settingsState.emailConfiguration.senderName} onChange={v => setSettingsState(s => setNested(s, 'emailConfiguration.senderName', v))} />;
+            return <FieldRow key={f} field={f} value={settingsState.emailConfiguration.tlsEnabled} onChange={v => setSettingsState(s => setNested(s, 'emailConfiguration.tlsEnabled', v))} />;
+          })}
           <Btn size="md" className="mt-2"><Mail size={13} />Update Email Config</Btn>
         </div>
       )}
@@ -1669,15 +1901,18 @@ function SettingsPage() {
       {tab === "otp" && (
         <div className={`${glassCard} p-6 space-y-4 max-w-xl`}>
           <p className="text-xs font-mono text-blue-500/60 border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 rounded-lg">GET /api/settings → otpConfiguration</p>
-          <FieldRow field="otpLength"          value={settings.otpConfiguration.otpLength}         type="number" />
-          <FieldRow field="otpExpiryMinutes"   value={settings.otpConfiguration.otpExpiryMinutes}  type="number" />
-          <FieldRow field="maxAttempts"        value={settings.otpConfiguration.maxAttempts}       type="number" />
+          {['otpLength','otpExpiryMinutes','maxAttempts'].map(f => {
+            if (settingsSearch && !f.toLowerCase().includes(settingsSearch.toLowerCase())) return null;
+            if (f === 'otpLength') return <FieldRow key={f} field={f} value={settingsState.otpConfiguration.otpLength} onChange={v => setSettingsState(s => setNested(s, 'otpConfiguration.otpLength', v))} type="number" />;
+            if (f === 'otpExpiryMinutes') return <FieldRow key={f} field={f} value={settingsState.otpConfiguration.otpExpiryMinutes} onChange={v => setSettingsState(s => setNested(s, 'otpConfiguration.otpExpiryMinutes', v))} type="number" />;
+            return <FieldRow key={f} field={f} value={settingsState.otpConfiguration.maxAttempts} onChange={v => setSettingsState(s => setNested(s, 'otpConfiguration.maxAttempts', v))} type="number" />;
+          })}
           <div>
             <label className="text-[10px] font-mono text-slate-600 uppercase tracking-widest block mb-1.5">deliveryChannel</label>
             <div className="flex gap-2">
               {(["EMAIL","SMS","BOTH"] as const).map(c => (
-                <button key={c}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${settings.otpConfiguration.deliveryChannel === c ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "border-white/[0.08] text-slate-500 hover:text-slate-300"}`}>
+                <button key={c} onClick={() => setSettingsState(s => setNested(s, 'otpConfiguration.deliveryChannel', c))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${settingsState.otpConfiguration.deliveryChannel === c ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "border-white/[0.08] text-slate-500 hover:text-slate-300"}`}>
                   {c}
                 </button>
               ))}
@@ -1691,12 +1926,15 @@ function SettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className={`${glassCard} p-6 space-y-4`}>
             <p className="text-xs font-mono text-blue-500/60 border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 rounded-lg">GET /api/settings → securitySettings</p>
-            <FieldRow field="jwtExpiryMinutes"         value={settings.securitySettings.jwtExpiryMinutes}       type="number" />
-            <FieldRow field="refreshTokenExpiryDays"   value={settings.securitySettings.refreshTokenExpiryDays} type="number" />
-            <FieldRow field="maxLoginAttempts"         value={settings.securitySettings.maxLoginAttempts}       type="number" />
-            <FieldRow field="sessionTimeoutMinutes"    value={settings.securitySettings.sessionTimeoutMinutes}  type="number" />
-            <FieldRow field="mfaEnabled"               value={settings.securitySettings.mfaEnabled} />
-            <FieldRow field="ipWhitelistEnabled"       value={settings.securitySettings.ipWhitelistEnabled} />
+            {['jwtExpiryMinutes','refreshTokenExpiryDays','maxLoginAttempts','sessionTimeoutMinutes','mfaEnabled','ipWhitelistEnabled'].map(f => {
+              if (settingsSearch && !f.toLowerCase().includes(settingsSearch.toLowerCase())) return null;
+              if (f === 'jwtExpiryMinutes') return <FieldRow key={f} field={f} value={settingsState.securitySettings.jwtExpiryMinutes} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.jwtExpiryMinutes', v))} type="number" />;
+              if (f === 'refreshTokenExpiryDays') return <FieldRow key={f} field={f} value={settingsState.securitySettings.refreshTokenExpiryDays} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.refreshTokenExpiryDays', v))} type="number" />;
+              if (f === 'maxLoginAttempts') return <FieldRow key={f} field={f} value={settingsState.securitySettings.maxLoginAttempts} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.maxLoginAttempts', v))} type="number" />;
+              if (f === 'sessionTimeoutMinutes') return <FieldRow key={f} field={f} value={settingsState.securitySettings.sessionTimeoutMinutes} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.sessionTimeoutMinutes', v))} type="number" />;
+              if (f === 'mfaEnabled') return <FieldRow key={f} field={f} value={settingsState.securitySettings.mfaEnabled} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.mfaEnabled', v))} />;
+              return <FieldRow key={f} field={f} value={settingsState.securitySettings.ipWhitelistEnabled} onChange={v => setSettingsState(s => setNested(s, 'securitySettings.ipWhitelistEnabled', v))} />;
+            })}
             <Btn size="md" className="mt-2"><Lock size={13} />Update Security Settings</Btn>
           </div>
           <div className={`${glassCard} p-6`}>
@@ -1748,16 +1986,24 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
   const [section,   setSection]   = useState<SectionId>("overview");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen,setMobileOpen]= useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"api"|"email"|"otp"|"security"|null>(null);
+
+  const navigateTo = (s: SectionId, opts?: { tab?: "api"|"email"|"otp"|"security" }) => {
+    if (s === "settings" && opts?.tab) {
+      setSettingsInitialTab(opts.tab);
+    }
+    setSection(s);
+  };
 
   const renderPage = () => {
     switch (section) {
-      case "overview":      return <DashboardOverview />;
+      case "overview":      return <DashboardOverview onNavigate={navigateTo} />;
       case "users":         return <UserManagement />;
       case "analytics":     return <AnalyticsPage />;
       case "ai-monitoring": return <AIMonitoringPage />;
       case "reports":       return <ReportsPage />;
       case "notifications": return <NotificationsPage />;
-      case "settings":      return <SettingsPage />;
+      case "settings":      return <SettingsPage initialTab={settingsInitialTab ?? undefined} onTabConsumed={() => setSettingsInitialTab(null)} />;
     }
   };
 
@@ -1790,7 +2036,7 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
           </button>
         </div>
 
-        <TopNav section={section} onLogout={onLogout} />
+        <TopNav section={section} onLogout={onLogout} onNavigate={navigateTo} />
 
         <main className="flex-1 overflow-y-auto p-6">
           {renderPage()}
