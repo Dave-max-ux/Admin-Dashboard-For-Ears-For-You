@@ -1058,10 +1058,6 @@ function UserManagement() {
   const [filterStatus, setFilterStatus] = useState<"ALL" | UserStatus>("ALL");
   const [filterRole,   setFilterRole]   = useState<"ALL" | UserRole>("ALL");
   const [selected,     setSelected]     = useState<string[]>([]);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteName, setInviteName] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<UserRole>("USER");
   const [page, setPage] = useState(1);
   const PER_PAGE = 8;
 
@@ -1100,76 +1096,11 @@ function UserManagement() {
     downloadCSV('users.csv', rows as any);
   };
 
-  const inviteUser = (payload: { fullName: string; email: string; role: UserRole }) => {
-    const newUser: UserRecord = {
-      id: generateId('usr'),
-      fullName: payload.fullName,
-      email: payload.email,
-      role: payload.role,
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-    };
-    setUsers(u => [newUser, ...u]);
-    try {
-      const local = JSON.parse(localStorage.getItem('local_users') || '[]');
-      local.unshift(newUser);
-      localStorage.setItem('local_users', JSON.stringify(local));
-    } catch (e) { /* ignore */ }
-  };
-
   return (
     <div className="space-y-6">
       <SectionHeader title="User Management" sub={`${visibleUsers.length} total users · Endpoint: GET /api/users`}>
         <Btn variant="outline" onClick={exportCSV}><Download size={12} />Export CSV</Btn>
-        <Btn onClick={() => setInviteOpen(true)}><Plus size={12} />Invite User</Btn>
       </SectionHeader>
-
-      {inviteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className={`${glassCard} w-full max-w-md p-6 relative`}>
-            <button onClick={() => setInviteOpen(false)} className="absolute right-4 top-4 text-slate-500 hover:text-slate-300 transition">
-              <X size={16} />
-            </button>
-            <h3 className="font-bold text-white mb-1">Invite User</h3>
-            <p className="text-xs text-slate-500 mb-4">Create a new user account (mock invite for local testing).</p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Full name</label>
-                <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="e.g. Priya Nair" className={glassInput} />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Email address</label>
-                <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="e.g. priya.nair@gmail.com" className={glassInput} />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1.5">Role</label>
-                <select value={inviteRole} onChange={e => setInviteRole(e.target.value as UserRole)} className={`${glassInput} appearance-none`}>
-                  <option value="USER">USER</option>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="MODERATOR">MODERATOR</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-5">
-              <Btn variant="outline" className="flex-1 justify-center" onClick={() => setInviteOpen(false)}>Cancel</Btn>
-              <Btn className="flex-1 justify-center" onClick={() => {
-                const name = inviteName.trim();
-                const email = inviteEmail.trim();
-                if (!name || !email) { alert('Name and email are required'); return; }
-                const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRe.test(email)) { alert('Please enter a valid email address'); return; }
-                inviteUser({ fullName: name, email, role: inviteRole });
-                setInviteOpen(false);
-                setInviteName(''); setInviteEmail(''); setInviteRole('USER');
-                alert('Invitation created (mock)');
-              }}>Invite</Btn>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Aggregate stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -1570,77 +1501,14 @@ const REPORT_TYPE_BADGE:   Record<ReportType,   BadgeColor> = { HARASSMENT: "ros
 const REPORT_STATUS_BADGE: Record<ReportStatus, BadgeColor> = { PENDING: "amber", REVIEWED: "blue", RESOLVED: "green", DISMISSED: "gray" };
 
 function ReportsPage() {
-  const [filterStatus, setFilterStatus] = useState<"ALL" | ReportStatus>("ALL");
-
-  // Replace: const reports = await axios.get<ReportRecord[]>('/api/reports')
-  const reports = MOCK_REPORTS;
-  const filtered = reports.filter(r => filterStatus === "ALL" || r.status === filterStatus);
-
   return (
     <div className="space-y-6">
-      <SectionHeader title="Reports Management" sub={`${reports.length} total · Endpoint: GET /api/reports`}>
-        <Btn variant="outline"><Download size={12} />Export</Btn>
-        <Btn><RefreshCw size={12} />Refresh</Btn>
-      </SectionHeader>
+      <SectionHeader title="Reports Management" sub="Feature coming soon" />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {([
-          ["PENDING", "amber", reports.filter(r => r.status === "PENDING").length],
-          ["REVIEWED","blue",  reports.filter(r => r.status === "REVIEWED").length],
-          ["RESOLVED","green", reports.filter(r => r.status === "RESOLVED").length],
-          ["DISMISSED","gray", reports.filter(r => r.status === "DISMISSED").length],
-        ] as const).map(([status, color, count]) => (
-          <button key={status} onClick={() => setFilterStatus(status === filterStatus ? "ALL" : status)}
-            className={`${glassCard} p-4 text-left transition hover:bg-white/[0.06] ${filterStatus === status ? "border-blue-500/30 bg-blue-500/[0.05]" : ""}`}>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-mono">{status}</p>
-            <p className="text-2xl font-bold text-white mt-1 font-[Plus_Jakarta_Sans]">{count}</p>
-          </button>
-        ))}
+      <div className={`${glassCard} p-8 text-center`}>
+        <h3 className="text-xl font-semibold text-white">Feature coming soon</h3>
+        <p className="mt-2 text-sm text-slate-400">This section is currently being prepared for future release.</p>
       </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-1.5">
-        {(["ALL","PENDING","REVIEWED","RESOLVED","DISMISSED"] as const).map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition ${filterStatus === s ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300 border border-white/[0.06] hover:bg-white/[0.04]"}`}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* Reports table — fields map to ReportRecord interface */}
-      <TableWrapper>
-        <table className="w-full text-sm">
-          <thead>
-            <tr>{["reportId","reportedUser","reportType","description","status","createdAt","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr>
-          </thead>
-          <tbody>
-            {filtered.map(r => (
-              <tr key={r.reportId} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition group">
-                <Td className="font-mono text-[10px] text-slate-600">{r.reportId}</Td>
-                <Td className="font-mono text-xs text-slate-400">{r.reportedUser}</Td>
-                <Td><Badge label={r.reportType.replace("_", " ")} color={REPORT_TYPE_BADGE[r.reportType]} /></Td>
-                <Td>
-                  <p className="text-xs text-slate-400 max-w-xs truncate" title={r.description}>{r.description}</p>
-                </Td>
-                <Td><Badge label={r.status} color={REPORT_STATUS_BADGE[r.status]} /></Td>
-                <Td className="font-mono text-xs text-slate-500 whitespace-nowrap">{r.createdAt.split("T")[0]}</Td>
-                <Td>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                    <Btn variant="ghost" size="xs"><Eye size={11} />View</Btn>
-                    {r.status === "PENDING" && (
-                      <>
-                        <Btn variant="outline" size="xs"><CheckCircle size={11} />Resolve</Btn>
-                        <Btn variant="ghost"   size="xs"><XCircle size={11} />Dismiss</Btn>
-                      </>
-                    )}
-                  </div>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableWrapper>
     </div>
   );
 }
