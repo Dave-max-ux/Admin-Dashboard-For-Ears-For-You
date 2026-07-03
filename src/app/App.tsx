@@ -7,7 +7,7 @@ import {
   MoreVertical, Plus, RefreshCw, Lock, Globe, Mail, Clock,
   ArrowUp, ArrowDown, Edit, Trash2, ChevronDown, Send, X,
   User, Key, Zap, Database, Server, Cpu, BarChart2, Menu,
-  AlertCircle, TrendingUp, Layers, Sparkles, Radio,
+  AlertCircle, TrendingUp, Layers, Sparkles, Radio, Phone,
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -669,7 +669,7 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 // Endpoint labels show developers which GET endpoint each section calls
 // ─────────────────────────────────────────────────────────────────────────────
 
-type SectionId = "overview"|"users"|"analytics"|"ai-monitoring"|"reports"|"notifications"|"settings";
+type SectionId = "overview"|"users"|"analytics"|"ai-monitoring"|"reports"|"notifications"|"emergency"|"settings";
 
 const NAV_ITEMS: { id: SectionId; label: string; icon: React.ElementType; endpoint: string; badge?: string }[] = [
   { id: "overview",       label: "Dashboard",       icon: LayoutDashboard, endpoint: "GET /api/dashboard" },
@@ -678,6 +678,7 @@ const NAV_ITEMS: { id: SectionId; label: string; icon: React.ElementType; endpoi
   { id: "ai-monitoring",  label: "AI Monitoring",   icon: Sparkles,        endpoint: "GET /api/analytics" },
   { id: "reports",        label: "Reports",         icon: Shield,          endpoint: "GET /api/reports",       badge: "6" },
   { id: "notifications",  label: "Notifications",   icon: Bell,            endpoint: "GET /api/notifications" },
+  { id: "emergency",      label: "Emergency",       icon: Shield,          endpoint: "GET /api/emergency-resources" },
   { id: "settings",       label: "Settings",        icon: Settings,        endpoint: "GET /api/settings" },
 ];
 
@@ -1056,10 +1057,9 @@ const STATUS_BADGE: Record<UserStatus, BadgeColor> = { ACTIVE: "green", INACTIVE
 function UserManagement() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"ALL" | UserStatus>("ALL");
-  const [filterRole,   setFilterRole]   = useState<"ALL" | UserRole>("ALL");
   const [selected,     setSelected]     = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  const PER_PAGE = 8;
+  const PER_PAGE = 10;
 
   // Replace: const users = await axios.get<UserRecord[]>('/api/users')
   const [users, setUsers] = useState<UserRecord[]>(() => {
@@ -1077,8 +1077,7 @@ function UserManagement() {
     const q = search.toLowerCase();
     const matchSearch = u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.id.toLowerCase().includes(q);
     const matchStatus = filterStatus === "ALL" || u.status === filterStatus;
-    const matchRole   = filterRole   === "ALL" || u.role   === filterRole;
-    return matchSearch && matchStatus && matchRole;
+    return matchSearch && matchStatus;
   });
 
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -1129,16 +1128,6 @@ function UserManagement() {
             <button key={s} onClick={() => { setFilterStatus(s); setPage(1); }}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${filterStatus === s ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"}`}>
               {s}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-600 mr-1">Role:</span>
-          {(["ALL", "USER", "ADMIN", "MODERATOR"] as const).map(r => (
-            <button key={r} onClick={() => { setFilterRole(r); setPage(1); }}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${filterRole === r ? "bg-violet-500/20 text-violet-400 border border-violet-500/30" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"}`}>
-              {r}
             </button>
           ))}
         </div>
@@ -1619,6 +1608,185 @@ function NotificationsPage() {
 // PAGE: SETTINGS — GET /api/settings / PATCH /api/settings
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE: EMERGENCY RESOURCES — GET /api/emergency-resources
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EmergencyPage() {
+  const [resources, setResources] = useState([
+    { id: "emr_1", country: "Nigeria", name: "SURPIN Suicide Prevention Helpline", contactInfo: "0800 0787 746", resourceType: "HOTLINE" },
+    { id: "emr_2", country: "USA", name: "988 Suicide & Crisis Lifeline", contactInfo: "988", resourceType: "HOTLINE" },
+    { id: "emr_3", country: "UK", name: "Samaritans", contactInfo: "116 123", resourceType: "HOTLINE" },
+    { id: "emr_4", country: "Germany", name: "Telefonseelsorge", contactInfo: "0800 111 0 111", resourceType: "HOTLINE" },
+    { id: "emr_5", country: "Singapore", name: "Samaritans of Singapore (SOS)", contactInfo: "1-767", resourceType: "HOTLINE" },
+    { id: "emr_6", country: "India", name: "Kiran Mental Health Helpline", contactInfo: "1800-599-0019", resourceType: "HOTLINE" },
+    { id: "emr_7", country: "Brazil", name: "CVV (Centro de Valorização da Vida)", contactInfo: "188", resourceType: "HOTLINE" },
+  ]);
+
+  const [addResourceOpen, setAddResourceOpen] = useState(false);
+  const [newCountry, setNewCountry] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newContactInfo, setNewContactInfo] = useState("");
+  const [newResourceType, setNewResourceType] = useState<"HOTLINE" | "WEBSITE" | "CLINIC">("HOTLINE");
+
+  const addResource = () => {
+    if (!newCountry.trim() || !newName.trim() || !newContactInfo.trim()) {
+      alert("Please fill in all fields");
+      return;
+    }
+    const newId = `emr_${Math.max(...resources.map(r => parseInt(r.id.split('_')[1]) || 0), 0) + 1}`;
+    setResources([...resources, { id: newId, country: newCountry, name: newName, contactInfo: newContactInfo, resourceType: newResourceType }]);
+    setNewCountry("");
+    setNewName("");
+    setNewContactInfo("");
+    setNewResourceType("HOTLINE");
+    setAddResourceOpen(false);
+  };
+
+  const deleteResource = (id: string) => {
+    setResources(resources.filter(r => r.id !== id));
+  };
+
+  const hotkineCount = resources.filter(r => r.resourceType === "HOTLINE").length;
+  const websiteCount = resources.filter(r => r.resourceType === "WEBSITE").length;
+  const clinicCount = resources.filter(r => r.resourceType === "CLINIC").length;
+
+  const RESOURCE_TYPE_COLORS = {
+    HOTLINE: { bg: "bg-rose-500/10", border: "border-rose-500/30", text: "text-rose-400", label: "Rose", icon: Radio },
+    WEBSITE: { bg: "bg-blue-500/10", border: "border-blue-500/30", text: "text-blue-400", label: "Blue", icon: Globe },
+    CLINIC: { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400", label: "Emerald", icon: Shield },
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Emergency Resources" sub={`Global crisis helplines and support resources · Endpoint: GET /api/emergency-resources`}>
+        <Btn variant="outline"><RefreshCw size={12} />Refresh</Btn>
+        <Btn onClick={() => setAddResourceOpen(true)}><Plus size={12} />Add Resource</Btn>
+      </SectionHeader>
+
+      {/* Add Resource Modal */}
+      {addResourceOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+          <div className={`${glassCard} w-full max-w-lg p-6 relative`}>
+            <button onClick={() => setAddResourceOpen(false)}
+              className="absolute right-4 top-4 text-slate-500 hover:text-slate-300 transition">
+              <X size={16} />
+            </button>
+            <h3 className="font-bold text-white font-[Plus_Jakarta_Sans] mb-1">Add Emergency Resource</h3>
+            <p className="text-xs text-slate-500 mb-5 font-mono">POST /api/emergency-resources</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wide block mb-2">Country</label>
+                <input type="text" value={newCountry} onChange={e => setNewCountry(e.target.value)}
+                  placeholder="e.g. Nigeria, USA, UK…"
+                  className={`${glassInput}`} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wide block mb-2">Organization Name</label>
+                <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                  placeholder="e.g. Samaritans, 988 Lifeline…"
+                  className={`${glassInput}`} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wide block mb-2">Contact Info</label>
+                <input type="text" value={newContactInfo} onChange={e => setNewContactInfo(e.target.value)}
+                  placeholder="e.g. +1-800-273-8255 or https://example.com"
+                  className={`${glassInput}`} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase tracking-wide block mb-2">Resource Type</label>
+                <div className="flex gap-2">
+                  {(["HOTLINE", "WEBSITE", "CLINIC"] as const).map(rt => (
+                    <button key={rt} onClick={() => setNewResourceType(rt)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition ${newResourceType === rt ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "border-white/[0.08] text-slate-500 hover:text-slate-300"}`}>
+                      {rt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <Btn onClick={() => setAddResourceOpen(false)} variant="outline" className="flex-1">Cancel</Btn>
+              <Btn onClick={addResource} className="flex-1"><Plus size={12} />Add Resource</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { label: "Hotlines", value: hotkineCount, icon: Radio, gradient: CHART_COLORS.rose },
+          { label: "Websites", value: websiteCount, icon: Globe, gradient: CHART_COLORS.blue },
+          { label: "Clinics", value: clinicCount, icon: Shield, gradient: CHART_COLORS.green },
+        ].map(s => (
+          <div key={s.label} className={`${glassCard} p-5 relative overflow-hidden group cursor-pointer hover:bg-white/[0.08] transition`}>
+            <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-15 group-hover:opacity-25 transition"
+              style={{ background: `radial-gradient(circle, ${s.gradient}, transparent 70%)` }} />
+            <div className="flex items-start justify-between relative z-10">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{s.label}</p>
+                <p className="text-2xl font-bold text-white mt-1 font-[Plus_Jakarta_Sans]">{s.value}</p>
+              </div>
+              <s.icon size={20} className="text-slate-600" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Hero section */}
+      <div className={`${glassCard} p-6 relative overflow-hidden`}>
+        <div className="absolute -right-20 -top-20 w-80 h-80 rounded-full opacity-10"
+          style={{ background: `radial-gradient(circle, ${CHART_COLORS.rose}, transparent 70%)` }} />
+        <div className="relative z-10 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={20} className="text-rose-400" />
+            <h2 className="text-lg font-bold text-white font-[Plus_Jakarta_Sans]">Life-Saving Support Network</h2>
+          </div>
+          <p className="text-sm text-slate-400 max-w-2xl">
+            Instantly connect users to critical mental health resources across {resources.length} countries. Every connection to these services can make a life-changing difference.
+          </p>
+          <div className="flex items-center gap-3 pt-2">
+            <Badge label={`${hotkineCount} Active Hotlines`} color="rose" />
+            <Badge label={`Across ${new Set(resources.map(r => r.country)).size} Countries`} color="blue" />
+          </div>
+        </div>
+      </div>
+
+      {/* Resources Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {resources.map((r, idx) => (
+          <div key={r.id} className={`${glassCard} p-5 border ${RESOURCE_TYPE_COLORS[r.resourceType as keyof typeof RESOURCE_TYPE_COLORS].border} hover:bg-white/[0.06] transition group`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start gap-3 flex-1">
+                <div className={`${RESOURCE_TYPE_COLORS[r.resourceType as keyof typeof RESOURCE_TYPE_COLORS].bg} ${RESOURCE_TYPE_COLORS[r.resourceType as keyof typeof RESOURCE_TYPE_COLORS].border} border rounded-lg p-2.5`}>
+                  {Radio && <Radio size={16} className={RESOURCE_TYPE_COLORS[r.resourceType as keyof typeof RESOURCE_TYPE_COLORS].text} />}
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-white text-sm font-[Plus_Jakarta_Sans]">{r.name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{r.country}</p>
+                </div>
+              </div>
+              <Badge label={r.resourceType} color="rose" />
+            </div>
+            <div className="flex items-center gap-2 pt-3 border-t border-white/[0.05]">
+              <Phone size={13} className="text-slate-500" />
+              <span className="text-sm font-mono text-slate-300 font-medium">{r.contactInfo}</span>
+            </div>
+            <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition">
+              <Btn variant="ghost" size="xs" className="flex-1"><Edit size={11} />Edit</Btn>
+              <Btn variant="danger" size="xs" className="flex-1" onClick={() => deleteResource(r.id)}><Trash2 size={11} />Remove</Btn>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage({ initialTab, onTabConsumed }: { initialTab?: "api"|"email"|"otp"|"security"; onTabConsumed?: () => void }) {
   const [tab, setTab] = useState<"api"|"email"|"otp"|"security">("api");
   const [settingsState, setSettingsState] = useState<SettingsPayload>(() => {
@@ -1792,19 +1960,19 @@ function SettingsPage({ initialTab, onTabConsumed }: { initialTab?: "api"|"email
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-white/[0.06]">
-                    {["Permission", "USER", "MODERATOR", "ADMIN"].map(h => (
+                    {["Permission", "USER", "ADMIN"].map(h => (
                       <th key={h} className="text-left py-2 pr-3 text-slate-600 font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {[
-                    ["View dashboard",    false, true,  true  ],
-                    ["Manage users",      false, false, true  ],
-                    ["Moderate reports",  false, true,  true  ],
-                    ["Send notifs",       false, false, true  ],
-                    ["AI monitoring",     false, true,  true  ],
-                    ["Edit settings",     false, false, true  ],
+                    ["View dashboard",    false, true  ],
+                    ["Manage users",      false, true  ],
+                    ["Moderate reports",  false, true  ],
+                    ["Send notifications",false, true  ],
+                    ["AI monitoring",     false, true  ],
+                    ["Edit settings",     false, true  ],
                   ].map(([perm, ...roles]) => (
                     <tr key={perm as string} className="border-b border-white/[0.04]">
                       <td className="py-2 pr-3 text-slate-400">{perm as string}</td>
@@ -1852,6 +2020,7 @@ function AdminShell({ onLogout }: { onLogout: () => void }) {
       case "ai-monitoring": return <AIMonitoringPage />;
       case "reports":       return <ReportsPage />;
       case "notifications": return <NotificationsPage />;
+      case "emergency":     return <EmergencyPage />;
       case "settings":      return <SettingsPage initialTab={settingsInitialTab ?? undefined} onTabConsumed={() => setSettingsInitialTab(null)} />;
     }
   };
