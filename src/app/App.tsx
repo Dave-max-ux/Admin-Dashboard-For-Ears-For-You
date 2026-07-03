@@ -1591,7 +1591,6 @@ function NotificationsPage() {
         {[
           { label: "Total Sent",       value: notifs.length,                                           color: CHART_COLORS.blue },
           { label: "To All Users",     value: notifs.filter(n => n.targetAudience === "ALL").length,   color: CHART_COLORS.cyan },
-          { label: "To Premium",       value: notifs.filter(n => n.targetAudience === "PREMIUM").length,color: CHART_COLORS.violet },
           { label: "Re-engagement",    value: notifs.filter(n => n.targetAudience === "INACTIVE").length,color: CHART_COLORS.amber },
         ].map(s => (
           <div key={s.label} className={`${glassCard} p-4 relative overflow-hidden`}>
