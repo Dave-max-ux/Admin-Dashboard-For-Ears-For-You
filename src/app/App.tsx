@@ -1088,18 +1088,9 @@ function UserManagement() {
     setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const allSelected = paged.length > 0 && paged.every(u => selected.includes(u.id));
 
-  const exportCSV = () => {
-    const rows: Array<Array<string | number>> = [
-      ["id", "fullName", "email", "role", "status", "createdAt", "lastLogin"],
-      ...visibleUsers.map(u => [u.id, u.fullName, u.email, u.role, u.status, u.createdAt, u.lastLogin])
-    ];
-    downloadCSV('users.csv', rows as any);
-  };
-
   return (
     <div className="space-y-6">
       <SectionHeader title="User Management" sub={`${visibleUsers.length} total users · Endpoint: GET /api/users`}>
-        <Btn variant="outline" onClick={exportCSV}><Download size={12} />Export CSV</Btn>
       </SectionHeader>
 
       {/* Aggregate stats */}
@@ -1244,19 +1235,10 @@ function AnalyticsPage() {
   // Replace: const analytics = await axios.get<AnalyticsPayload>('/api/analytics')
   const [analytics, setAnalytics] = useState(MOCK_ANALYTICS);
 
-  const exportAnalytics = (from?: string, to?: string) => {
-    // simple CSV export of combined analytics arrays
-    const rows: Array<Array<string>> = [["type","date","value"]];
-    analytics.userGrowth.forEach(r => rows.push(["userGrowth", r.date, String(r.count)]));
-    analytics.dailyActiveUsers.forEach(r => rows.push(["dailyActiveUsers", r.date, String(r.count)]));
-    downloadCSV('analytics.csv', rows as any);
-  };
-
   return (
     <div className="space-y-6">
       <SectionHeader title="Analytics" sub="Platform trends · Endpoint: GET /api/analytics">
         <Btn variant="outline"><Filter size={12} />Date Range</Btn>
-        <Btn onClick={() => exportAnalytics()}><Download size={12} />Export</Btn>
       </SectionHeader>
 
       {/* userGrowth + dailyActiveUsers */}
